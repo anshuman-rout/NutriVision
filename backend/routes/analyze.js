@@ -1,89 +1,60 @@
 import express from "express";
 import multer from "multer";
-import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const router = express.Router();
 
-// ---------------- MULTER SETUP ----------------
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname),
-});
+// ✅ Use MEMORY storage (fixes Render issues)
+const upload = multer({ storage: multer.memoryStorage() });
 
-const upload = multer({ storage });
-
-// ---------------- VALID VALUES ----------------
+// ✅ Allowed values
 const allowedAgeGroups = ["6-10", "11-14", "15-18", "adult"];
+const allowedLifestyles = ["student", "athlete", "bodybuilder", "sedentary"];
+const allowedWeightCategories = ["underweight", "normal", "overweight", "obese"];
 
-const allowedLifestyles = [
-  "student",
-  "athlete",
-  "bodybuilder",
-  "sedentary",
-];
-
-const allowedWeightCategories = [
-  "underweight",
-  "normal",
-  "overweight",
-  "obese",
-];
-
-// ---------------- ROUTE ----------------
+// 🚀 ROUTE
 router.post("/", upload.single("image"), async (req, res) => {
   try {
-    const imageFile = req.file;
+    // 🔍 Debug logs (remove later if you want)
+    console.log("API KEY:", process.env.GEMINI_API_KEY ? "Loaded" : "Missing");
+    console.log("File received:", !!req.file);
 
-    const ageGroup = req.body.ageGroup?.trim();
-    const lifestyle = req.body.lifestyle?.trim().toLowerCase();
-    const weightCategory = req.body.weightCategory?.trim().toLowerCase();
+    const { ageGroup, lifestyle, weightCategory } = req.body;
 
-    // ---------- VALIDATION ----------
-    if (!imageFile) {
+    // ❌ Validation
+    if (!req.file) {
       return res.status(400).json({ error: "No image uploaded" });
     }
 
     if (!ageGroup || !lifestyle || !weightCategory) {
       return res.status(400).json({
-        error:
-          "ageGroup, lifestyle, and weightCategory are required fields",
+        error: "ageGroup, lifestyle, and weightCategory are required",
       });
     }
 
     if (!allowedAgeGroups.includes(ageGroup)) {
-      return res.status(400).json({
-        error: "Invalid ageGroup",
-        allowedAgeGroups,
-      });
+      return res.status(400).json({ error: "Invalid ageGroup" });
     }
 
     if (!allowedLifestyles.includes(lifestyle)) {
-      return res.status(400).json({
-        error: "Invalid lifestyle",
-        allowedLifestyles,
-      });
+      return res.status(400).json({ error: "Invalid lifestyle" });
     }
 
     if (!allowedWeightCategories.includes(weightCategory)) {
-      return res.status(400).json({
-        error: "Invalid weightCategory",
-        allowedWeightCategories,
-      });
+      return res.status(400).json({ error: "Invalid weightCategory" });
     }
 
-    // ---------- IMAGE → BASE64 ----------
-    const imageBuffer = fs.readFileSync(imageFile.path);
-    const base64Image = imageBuffer.toString("base64");
+    // ✅ Convert image to base64 (NO fs needed)
+    const base64Image = req.file.buffer.toString("base64");
 
-    // ---------- GEMINI INIT ----------
+    // 🤖 Gemini setup
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash-latest",
     });
 
-    // ---------- PROMPT ----------
+    // 🧠 Prompt
     const prompt = `
 You are a strict JSON generator.
 
@@ -130,73 +101,79 @@ DO NOT:
 - Add text like "Here is the result"
 `;
 
-    // ---------- GEMINI CALL ----------
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Image,
-          mimeType: "image/jpeg",
+    let outputText;
+
+    // 🔥 Gemini call (safe)
+    try {
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: base64Image,
+            mimeType: "image/jpeg",
+          },
         },
-      },
-    ]);
+      ]);
 
-    const outputText = result.response.text();
+      outputText = result.response.text();
 
-    // ---------- PARSE RESPONSE ----------
+    } catch (err) {
+      console.error("❌ Gemini API Error:", err);
+
+      return res.status(500).json({
+        error: "AI processing failed",
+      });
+    }
+
+    // 🧠 Parse response safely
     let parsed;
 
-try {
-  let cleanText = outputText
-    .replace(/```json/g, "")
-    .replace(/```/g, "")
-    .replace(/^[^\{]*/, "")   // remove anything before first {
-    .replace(/[^\}]*$/, "")   // remove anything after last }
-    .trim();
+    try {
+      let cleanText = outputText
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .replace(/^[^{]*/, "")
+        .replace(/[^}]*$/, "")
+        .trim();
 
-  parsed = JSON.parse(cleanText);
+      parsed = JSON.parse(cleanText);
 
-} catch (err) {
-  console.log("⚠️ JSON parsing failed → fallback");
-  console.log("RAW OUTPUT:", outputText);
+    } catch (err) {
+      console.log("⚠️ JSON parsing failed → fallback");
 
-  parsed = {
-    foods: ["rice", "dal"],
-    nutrition: {
-      calories: 500,
-      protein: 15,
-      carbs: 80,
-      fat: 10,
-    },
-    analysis: {
-      status: "deficient",
-      notes: "Protein intake is slightly low",
-    },
-    suggestions: [
-      "Add egg or paneer for protein",
-      "Include vegetables",
-      "Increase portion size slightly",
-    ],
-  };
-}
+      parsed = {
+        foods: ["rice", "dal"],
+        nutrition: {
+          calories: 500,
+          protein: 15,
+          carbs: 80,
+          fat: 10,
+        },
+        analysis: {
+          status: "deficient",
+          notes: "Protein intake is slightly low",
+        },
+        suggestions: [
+          "Add egg or paneer for protein",
+          "Include vegetables",
+          "Increase portion size slightly",
+        ],
+      };
+    }
 
-    // ---------- CLEANUP ----------
-    fs.unlinkSync(imageFile.path);
-
-    // ---------- RESPONSE ----------
+    // ✅ Final response
     return res.json({
       success: true,
-      inputs: {
-        ageGroup,
-        lifestyle,
-        weightCategory,
-      },
+      inputs: { ageGroup, lifestyle, weightCategory },
       result: parsed,
     });
 
   } catch (error) {
     console.error("Analyze Error:", error);
-    return res.status(500).json({ error: "Server error" });
+
+    return res.status(500).json({
+      error: error.message || "Server error",
+    });
   }
 });
 
