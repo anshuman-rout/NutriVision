@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import analyzeRoute from "./routes/analyze.js";
 dotenv.config();
 
 const app = express();  // ✅ MUST come BEFORE app.use
