@@ -30,7 +30,7 @@ function App() {
       setLoading(true);
 
       const res = await axios.post(
-        "http://localhost:5000/analyze",
+        "https://nutrivision-t3t7.onrender.com/analyze",
         formData
       );
 
