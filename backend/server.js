@@ -3,6 +3,9 @@ import cors from "cors";
 import dotenv from "dotenv";
 import analyzeRoute from "./routes/analyze.js";
 
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
 dotenv.config();
 
 const app = express();

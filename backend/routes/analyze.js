@@ -15,6 +15,8 @@ const allowedWeightCategories = ["underweight", "normal", "overweight", "obese"]
 // 🚀 ROUTE
 router.post("/", upload.single("image"), async (req, res) => {
   try {
+    console.log("REQ BODY:", req.body);
+    console.log("FILE RECEIVED:", req.file ? "YES" : "NO");
     // 🔍 Debug logs (remove later if you want)
     console.log("API KEY:", process.env.GEMINI_API_KEY ? "Loaded" : "Missing");
     console.log("File received:", !!req.file);
@@ -22,9 +24,11 @@ router.post("/", upload.single("image"), async (req, res) => {
     const { ageGroup, lifestyle, weightCategory } = req.body;
 
     // ❌ Validation
-    if (!req.file) {
-      return res.status(400).json({ error: "No image uploaded" });
-    }
+    if (!req.file || !req.file.buffer) {
+    return res.status(400).json({
+    error: "Image upload failed",
+    });
+  }
 
     if (!ageGroup || !lifestyle || !weightCategory) {
       return res.status(400).json({
@@ -110,12 +114,17 @@ DO NOT:
         {
           inlineData: {
             data: base64Image,
-            mimeType: "image/jpeg",
+            mimeType: req.file.mimetype || "image/jpeg",
           },
         },
       ]);
 
       outputText = result.response.text();
+      if (!outputText) {
+        return res.status(500).json({
+          error: "No response from AI",
+        });
+      }
 
     } catch (err) {
       console.error("❌ Gemini API Error:", err);
