@@ -128,23 +128,30 @@ DO NOT:
     }
 
     // ✅ Parse safely
-    let parsed;
+let parsed;
 
-    try {
-      const cleanText = outputText
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .replace(/^[^{]*/, "")
-        .replace(/[^}]*$/, "")
-        .trim();
+try {
+  let cleanText = outputText.trim();
 
-      parsed = JSON.parse(cleanText);
+  // remove markdown blocks
+  cleanText = cleanText.replace(/```json/g, "");
+  cleanText = cleanText.replace(/```/g, "");
 
-    } catch (err) {
-      console.log("⚠️ JSON parse failed");
+  // extract only JSON object
+  const firstBrace = cleanText.indexOf("{");
+  const lastBrace = cleanText.lastIndexOf("}");
 
-      parsed = fallbackResponse("Parse failed");
-    }
+  cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+
+  console.log("CLEAN JSON:", cleanText);
+
+  parsed = JSON.parse(cleanText);
+
+  } catch (err) {
+  console.log("⚠️ JSON parse failed:", err.message);
+
+  parsed = fallbackResponse("Parse failed");
+}
 
     return res.json({
       success: true,
